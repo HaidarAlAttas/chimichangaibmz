@@ -1,33 +1,22 @@
+enum Sex {
+  female('Female', 'female'),
+  male('Male', 'male');
+
+  const Sex(this.label, this.apiValue);
+  final String label;
+  final String apiValue;
+}
+
+/// Architecture step 1.1: what the user types in before the scan.
 class PatientInput {
   final int age;
-  final String sex;
-  final String userId;
-  final DateTime timestamp;
+  final Sex sex;
 
-  PatientInput({
-    required this.age,
-    required this.sex,
-    required this.userId,
-    DateTime? timestamp,
-  }) : timestamp = timestamp ?? DateTime.now();
+  const PatientInput({required this.age, required this.sex});
 
-  Map<String, dynamic> toJson() {
-    return {
-      'user_id': userId,
-      'age': age,
-      'sex': sex,
-      'timestamp': timestamp.toIso8601String(),
-    };
-  }
+  static const minAge = 1;
+  static const maxAge = 120;
 
-  factory PatientInput.fromJson(Map<String, dynamic> json) {
-    return PatientInput(
-      age: json['age'] as int? ?? 25,
-      sex: json['sex'] as String? ?? 'Male',
-      userId: json['user_id'] as String? ?? 'anon_user',
-      timestamp: json['timestamp'] != null 
-          ? DateTime.parse(json['timestamp'] as String) 
-          : DateTime.now(),
-    );
-  }
+  PatientInput copyWith({int? age, Sex? sex}) =>
+      PatientInput(age: age ?? this.age, sex: sex ?? this.sex);
 }

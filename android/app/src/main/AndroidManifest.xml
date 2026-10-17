@@ -1,8 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Front camera for the scan; network to reach the LinuxONE server. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-feature android:name="android.hardware.camera.front" android:required="false"/>
     <application
-        android:label="chimichangaibmz"
+        android:label="PulsePal"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+        <!-- usesCleartextTraffic allows http:// to a dev server on the local
+             network. Remove it once the server is behind HTTPS. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

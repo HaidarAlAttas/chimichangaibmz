@@ -1,37 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
+import 'app/theme.dart';
+import 'config/api_config.dart';
+import 'screens/consent_screen.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const PulsePalApp());
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  final consented = await ApiConfig.hasConsent();
+  runApp(PulsePalApp(consented: consented));
 }
 
 class PulsePalApp extends StatelessWidget {
-  const PulsePalApp({super.key});
+  const PulsePalApp({super.key, this.consented = false});
+
+  final bool consented;
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PulsePal AI — LinuxONE',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF060B14),
-        primaryColor: const Color(0xFF0043CE),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF0043CE),
-          secondary: Color(0xFF38BDF8),
-          surface: Color(0xFF0F172A),
-          background: Color(0xFF060B14),
-        ),
-
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'PulsePal',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        home: consented ? const HomeScreen() : const ConsentScreen(),
+      );
 }

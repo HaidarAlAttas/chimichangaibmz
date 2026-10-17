@@ -1,337 +1,353 @@
-import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+
+import '../app/theme.dart';
 import '../models/patient_input.dart';
+import '../services/capture/capture_controller.dart';
+import '../services/capture/quality_gate.dart';
 import '../services/linuxone_api_service.dart';
-import '../services/rppg_extractor_service.dart';
-import '../widgets/camera_overlay_widget.dart';
-import '../widgets/pulse_chart_widget.dart';
-import '../widgets/health_dashboard_popup.dart';
+import '../widgets/common.dart';
+import '../widgets/face_guide_overlay.dart';
+import '../widgets/pulse_trace.dart';
+import 'analysing_screen.dart';
+import 'retake_screen.dart';
 
+/// Steps 1.2-1.4: position + quality gate, then the 30 s recording.
 class ScanScreen extends StatefulWidget {
-  final PatientInput patient;
+  const ScanScreen({super.key, required this.patient, this.forceSimulated = false});
 
-  const ScanScreen({super.key, required this.patient});
+  final PatientInput patient;
+  final bool forceSimulated;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  CameraController? _cameraController;
-  final _rppgService = RppgExtractorService();
-  final _apiService = LinuxOneApiService();
-
-  bool _isCameraReady = false;
-  bool _isScanning = false;
-  bool _isAnalyzing = false;
-  double _progress = 0.0;
-  int _remainingSeconds = 15;
-  Timer? _countdownTimer;
-
-  final List<double> _recentSamples = [];
-  StreamSubscription? _pulseSub;
-  StreamSubscription? _progressSub;
+  late final CaptureController _c = CaptureController(forceSimulated: widget.forceSimulated);
+  bool _handedOff = false;
 
   @override
   void initState() {
     super.initState();
-    _initCamera();
-    _setupStreams();
-  }
-
-  void _setupStreams() {
-    _pulseSub = _rppgService.livePulseStream.listen((sample) {
-      if (!mounted) return;
-      setState(() {
-        _recentSamples.add(sample);
-        if (_recentSamples.length > 50) {
-          _recentSamples.removeAt(0);
-        }
-      });
-    });
-
-    _progressSub = _rppgService.progressStream.listen((prog) {
-      if (!mounted) return;
-      setState(() {
-        _progress = prog;
-      });
-    });
-  }
-
-  Future<void> _initCamera() async {
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        // No hardware camera found (e.g. simulator)
-        setState(() => _isCameraReady = false);
-        return;
-      }
-
-      // Prefer front-facing camera for facial rPPG
-      final frontCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-
-      _cameraController = CameraController(
-        frontCamera,
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
-      );
-
-      await _cameraController!.initialize();
-      if (mounted) {
-        setState(() => _isCameraReady = true);
-      }
-    } catch (e) {
-      // Camera permissions or hardware unavailable
-      setState(() => _isCameraReady = false);
-    }
-  }
-
-  void _startScan() {
-    setState(() {
-      _isScanning = true;
-      _isAnalyzing = false;
-      _progress = 0.0;
-      _remainingSeconds = 15;
-      _recentSamples.clear();
-    });
-
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      setState(() {
-        if (_remainingSeconds > 1) {
-          _remainingSeconds--;
-        } else {
-          timer.cancel();
-        }
-      });
-    });
-
-    if (_isCameraReady && _cameraController != null) {
-      // Hardware camera stream
-      _rppgService.startCapture(targetDurationSeconds: 15);
-      _cameraController!.startImageStream((image) {
-        _rppgService.processCameraImage(image);
-        if (!_rppgService.isProcessing) {
-          _cameraController?.stopImageStream();
-          _onCaptureFinished(_rppgService.collectedSignal);
-        }
-      });
-    } else {
-      // Simulated rPPG generator (for Simulator or demo without webcam)
-      _rppgService.startSimulatedCapture(
-        targetDurationSeconds: 15,
-        onComplete: (signal) {
-          _onCaptureFinished(signal);
-        },
-      );
-    }
-  }
-
-  Future<void> _onCaptureFinished(List<double> rawSignal) async {
-    _countdownTimer?.cancel();
-    setState(() {
-      _isScanning = false;
-      _isAnalyzing = true;
-    });
-
-    try {
-      // Transmit to IBM LinuxONE (Step 1 -> Step 2)
-      final results = await _apiService.analyzeRppgSignal(
-        patient: widget.patient,
-        rawSignal: rawSignal,
-      );
-
-      if (mounted) {
-        setState(() => _isAnalyzing = false);
-        // Display Pop-up Patient Health Dashboard (Step 3)
-        HealthDashboardPopup.show(context, results);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isAnalyzing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Analysis failed: $e"),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    }
+    _c.addListener(_onChange);
+    _c.start();
   }
 
   @override
   void dispose() {
-    _countdownTimer?.cancel();
-    _pulseSub?.cancel();
-    _progressSub?.cancel();
-    _rppgService.dispose();
-    _cameraController?.dispose();
+    _c.removeListener(_onChange);
+    _c.dispose();
     super.dispose();
+  }
+
+  void _onChange() {
+    if (!mounted) return;
+    if (_c.phase == CapturePhase.finished && !_handedOff) {
+      _handedOff = true;
+      final o = _c.outcome!;
+      final route = o.passedGate
+          ? MaterialPageRoute<void>(
+              builder: (_) => AnalysingScreen(
+                    patient: widget.patient,
+                    upload: ScanUpload(
+                      patient: widget.patient,
+                      trace: o.trace,
+                      deviceSqi: o.deviceSqi,
+                      simulated: o.simulated,
+                    ),
+                  ))
+          : MaterialPageRoute<void>(
+              builder: (_) => RetakeScreen(
+                    patient: widget.patient,
+                    reasons: o.failureReasons.isEmpty ? const ['motion'] : o.failureReasons,
+                    sqi: o.deviceSqi,
+                    fromDevice: true,
+                  ));
+      Navigator.of(context).pushReplacement(route);
+      return;
+    }
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    final recording = _c.phase == CapturePhase.recording;
     return Scaffold(
-      backgroundColor: const Color(0xFF060B14),
-      body: Stack(
-        children: [
-          // Camera Preview or Dark Fallback
-          Positioned.fill(
-            child: _isCameraReady && _cameraController != null
-                ? CameraPreview(_cameraController!)
-                : Container(
-                    decoration: const BoxDecoration(
-                      gradient: RadialGradient(
-                        colors: [Color(0xFF0F1E4A), Color(0xFF060B14)],
-                        radius: 1.2,
-                      ),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.face_retouching_natural, size: 100, color: const Color(0xFF38BDF8).withOpacity(0.4)),
-                          const SizedBox(height: 16),
-                          const Text(
-                            "Facial rPPG Camera Simulation Mode",
-                            style: TextStyle(color: Colors.white70, fontSize: 14),
-                          ),
-                          const Text(
-                            "30 FPS Video Frames Ready",
-                            style: TextStyle(color: Color(0xFF38BDF8), fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+      backgroundColor: AppColors.camera,
+      body: Stack(fit: StackFit.expand, children: [
+        _preview(),
+        if (_c.phase != CapturePhase.error)
+          FaceGuideOverlay(
+            frameAspect: _c.frameAspect,
+            recording: recording,
+            progress: _c.progress,
+            showRois: recording,
           ),
-
-          // Alignment Overlay & Progress
-          CameraOverlayWidget(
-            progress: _progress,
-            isScanning: _isScanning,
-            remainingSeconds: _remainingSeconds,
-          ),
-
-          // Top Bar with Patient Info & Close Button
-          Positioned(
-            top: 48,
-            left: 20,
-            right: 20,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A).withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person, color: Color(0xFF38BDF8), size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        "${widget.patient.sex}, Age ${widget.patient.age}",
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black54,
-                  ),
-                ),
-              ],
+        if (recording) _countdown(context),
+        SafeArea(
+          child: Column(children: [
+            _topBar(recording),
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: _sheet(recording),
             ),
-          ),
+          ]),
+        ),
+      ]),
+    );
+  }
 
-          // Bottom Controls & Live Pulse Waveform
-          Positioned(
-            bottom: 30,
-            left: 20,
-            right: 20,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Live Waveform Chart
-                PulseChartWidget(recentSamples: _recentSamples),
-                const SizedBox(height: 16),
+  Widget _preview() {
+    final cam = _c.camera;
+    if (cam != null && cam.value.isInitialized) {
+      // Scale the preview to COVER the screen. FaceGuideOverlay uses the same
+      // maths (FrameToScreen), so the oval sits on the sampled pixels.
+      final w = MediaQuery.sizeOf(context).width;
+      return SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(width: w, height: w / _c.frameAspect, child: CameraPreview(cam)),
+        ),
+      );
+    }
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0, -0.25),
+          radius: 1.1,
+          colors: [Color(0xFF2A2F3A), Color(0xFF12151C), AppColors.camera],
+          stops: [0, 0.55, 1],
+        ),
+      ),
+      child: _c.simulated
+          ? const Align(
+              alignment: Alignment(0, -0.18),
+              child: Icon(Icons.face_outlined, size: 120, color: Color(0x33FFFFFF)),
+            )
+          : null,
+    );
+  }
 
-                // Start / Stop Button
-                if (!_isScanning && !_isAnalyzing)
-                  ElevatedButton(
-                    onPressed: _startScan,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0043CE),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      elevation: 6,
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.play_arrow, size: 22),
-                        SizedBox(width: 8),
-                        Text(
-                          "START 15S VITALS SCAN",
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
+  Widget _countdown(BuildContext context) {
+    final oval = FaceGuideOverlay.ovalRect(MediaQuery.sizeOf(context), _c.frameAspect);
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: oval.bottom + 14,
+      child: Column(children: [
+        Text('${_c.secondsLeft}',
+            style: const TextStyle(
+                fontFamily: AppFonts.mono, fontSize: 44, fontWeight: FontWeight.w500,
+                color: Colors.white)),
+        const Text('seconds left',
+            style: TextStyle(fontFamily: AppFonts.sans, fontSize: 13,
+                color: AppColors.cameraText2)),
+      ]),
+    );
+  }
 
-          // Analyzing Loading Overlay
-          if (_isAnalyzing)
-            Container(
-              color: Colors.black.withOpacity(0.85),
-              child: Center(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFF38BDF8)),
-                  ),
-                  child: const Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
-                        strokeWidth: 3,
-                      ),
-                      SizedBox(height: 20),
-                      Text(
-                        "Connecting to IBM LinuxONE...",
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "1. Offloaded DSP Bandpass (0.7-3.5Hz) & SQI\n2. Telum AI CNN-LSTM Inference\n3. XGBoost Risk Stratification\n4. IBM Granite Clinical Synthesis",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, height: 1.5),
-                      ),
-                    ],
-                  ),
-                ),
+  Widget _topBar(bool recording) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: SizedBox(
+          height: 44,
+          child: Stack(alignment: Alignment.center, children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).pop(),
+                style: IconButton.styleFrom(backgroundColor: const Color(0x24FFFFFF)),
+                icon: const Icon(Icons.close, color: Colors.white, size: 20),
               ),
             ),
-        ],
+            if (recording)
+              Pill(
+                label: 'Recording · 0:${_c.secondsLeft.toString().padLeft(2, '0')} left',
+                foreground: Colors.white,
+                background: const Color(0x1FFFFFFF),
+                dot: const Color(0xFFFF4D5A),
+                height: 34,
+                fontSize: 14,
+              )
+            else
+              const Text('Position your face',
+                  style: TextStyle(fontFamily: AppFonts.sans, fontSize: 17,
+                      fontWeight: FontWeight.w600, color: Colors.white)),
+          ]),
+        ),
+      );
+
+  Widget _sheet(bool recording) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.cameraSheet,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0x14FFFFFF)),
+      ),
+      child: switch (_c.phase) {
+        CapturePhase.error => _errorBody(),
+        CapturePhase.recording => _recordingBody(),
+        _ => _gateBody(),
+      },
+    );
+  }
+
+  Widget _gateBody() {
+    final g = _c.gate;
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+      Row(children: [
+        const Text('Getting ready',
+            style: TextStyle(fontFamily: AppFonts.sans, fontSize: 18,
+                fontWeight: FontWeight.w600, color: Colors.white)),
+        const Spacer(),
+        Text('${g.passed} of 3',
+            style: const TextStyle(fontFamily: AppFonts.mono, fontSize: 13,
+                color: AppColors.cameraText2)),
+      ]),
+      if (_c.simulated) ...[
+        const SizedBox(height: 10),
+        const Text('No camera found. Using a simulated signal; results will be marked DEMO.',
+            style: TextStyle(fontFamily: AppFonts.sans, fontSize: 13, color: Color(0xFFFFD666))),
+      ],
+      const SizedBox(height: 14),
+      _GateRow('Lighting', g.lighting),
+      const SizedBox(height: 10),
+      _GateRow('Face', g.face),
+      const SizedBox(height: 10),
+      _GateRow('Movement', g.movement),
+      const SizedBox(height: 18),
+      FilledButton(
+        onPressed: g.ready ? _c.beginRecording : null,
+        child: Text(g.ready ? 'Start 30-second scan' : 'Waiting for checks'),
+      ),
+    ]);
+  }
+
+  Widget _recordingBody() => Column(mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          const Text('Live pulse signal',
+              style: TextStyle(fontFamily: AppFonts.sans, fontSize: 13,
+                  color: AppColors.cameraText2)),
+          const Spacer(),
+          SignalBars(lit: _c.liveBars, on: _barColor(), off: const Color(0x33FFFFFF)),
+          const SizedBox(width: 6),
+          Text(_signalLabel(),
+              style: TextStyle(fontFamily: AppFonts.sans, fontSize: 13, color: _barColor())),
+        ]),
+        const SizedBox(height: 10),
+        PulseTrace(green: _c.liveGreen),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+              color: const Color(0x0FFFFFFF), borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            const Icon(Icons.info_outline, size: 18, color: Color(0xFF9DB8FF)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _c.gate.allOk ? 'Breathe normally. Try not to talk or move.' : _hint(),
+                style: const TextStyle(fontFamily: AppFonts.sans, fontSize: 14,
+                    color: Color(0xFFD6DAE2)),
+              ),
+            ),
+          ]),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          style: TextButton.styleFrom(foregroundColor: AppColors.cameraText2),
+          child: const Text('Cancel'),
+        ),
+      ]);
+
+  Widget _errorBody() => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+        const Text("Can't use the camera",
+            style: TextStyle(fontFamily: AppFonts.sans, fontSize: 18,
+                fontWeight: FontWeight.w600, color: Colors.white)),
+        const SizedBox(height: 8),
+        Text(_c.errorMessage ?? 'Something went wrong starting the camera.',
+            style: const TextStyle(fontFamily: AppFonts.sans, fontSize: 14,
+                color: AppColors.cameraText2)),
+        const SizedBox(height: 16),
+        FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Back')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+              builder: (_) => ScanScreen(patient: widget.patient, forceSimulated: true))),
+          style: TextButton.styleFrom(foregroundColor: AppColors.cameraText2),
+          child: const Text('Use a simulated signal (demo)'),
+        ),
+      ]);
+
+  String _hint() {
+    final g = _c.gate;
+    if (!g.face.ok) return '${g.face.message}. Keep your face inside the oval.';
+    if (!g.lighting.ok) return '${g.lighting.message}. Face a steady light.';
+    return 'Hold still.';
+  }
+
+  Color _barColor() => _c.liveBars >= 3
+      ? AppColors.cameraOk
+      : _c.liveBars == 2
+          ? const Color(0xFFFFD666)
+          : const Color(0xFFFF8A8A);
+
+  String _signalLabel() =>
+      _c.liveBars >= 3 ? 'Signal good' : _c.liveBars == 2 ? 'Signal fair' : 'Signal weak';
+}
+
+class _GateRow extends StatelessWidget {
+  const _GateRow(this.title, this.check);
+  final String title;
+  final Check check;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget icon = switch (check.state) {
+      CheckState.ok => Container(
+          width: 28,
+          height: 28,
+          decoration: const BoxDecoration(color: Color(0xFF1F8A52), shape: BoxShape.circle),
+          child: const Icon(Icons.check, size: 16, color: Colors.white)),
+      CheckState.fail => Container(
+          width: 28,
+          height: 28,
+          decoration: const BoxDecoration(color: Color(0xFF8A2A31), shape: BoxShape.circle),
+          child: const Icon(Icons.close, size: 16, color: Colors.white)),
+      CheckState.pending => const SizedBox(
+          width: 28,
+          height: 28,
+          child: Padding(
+            padding: EdgeInsets.all(4),
+            child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
+          )),
+    };
+    final color = switch (check.state) {
+      CheckState.ok => AppColors.cameraOk,
+      CheckState.fail => const Color(0xFFFF8A8A),
+      CheckState.pending => AppColors.cameraText2,
+    };
+    return Semantics(
+      label: '$title: ${check.message}',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+            color: const Color(0x0FFFFFFF), borderRadius: BorderRadius.circular(14)),
+        child: Row(children: [
+          icon,
+          const SizedBox(width: 12),
+          Text(title,
+              style: const TextStyle(fontFamily: AppFonts.sans, fontSize: 15,
+                  fontWeight: FontWeight.w500, color: Colors.white)),
+          const Spacer(),
+          Text(check.message,
+              style: TextStyle(fontFamily: AppFonts.sans, fontSize: 15, color: color)),
+        ]),
       ),
     );
   }

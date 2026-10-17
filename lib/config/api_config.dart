@@ -1,51 +1,59 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// ============================================================================
-/// 🌐 LINUXONE API CONFIGURATION — HIGHLIGHTED CONNECTION POINT
-/// ============================================================================
-/// 
-/// Set your LinuxONE backend instance IP / domain below.
-/// You can also change this dynamically in the app via the Settings screen.
+/// Where the LinuxONE core lives, plus persisted user settings.
 ///
-/// If your LinuxONE instance is running FastAPI:
-///   Default port is typically 8000.
-///   Example local network: http://192.168.1.100:8000
-///   Example public LinuxONE: http://148.100.xx.xx:8000
-/// ============================================================================
-
+/// The server address can also be changed in the app (Settings), no rebuild.
+/// Use https:// in production. Plain http:// only works on a dev network:
+/// Android needs the cleartext flag in AndroidManifest.xml (already set for
+/// demos) and iOS allows it only for local-network addresses.
 class ApiConfig {
-  // 🚨 CHANGE THIS TO YOUR LINUXONE SERVER IP / HOSTNAME
-  static const String defaultLinuxOneHost = "http://10.0.2.2:8000"; // 10.0.2.2 for Android Emulator, change to IP for real phone
+  ApiConfig._();
 
-  // API Endpoints on LinuxONE
-  static const String analyzeEndpoint = "/api/v1/analyze";
-  static const String healthEndpoint = "/api/v1/health";
+  /// 10.0.2.2 reaches the host machine from the Android emulator.
+  static const String defaultHost = 'http://10.0.2.2:8000';
 
-  // Shared preferences key for dynamic IP configuration
-  static const String _prefHostKey = "linuxone_api_host";
-  static const String _prefMockModeKey = "linuxone_mock_mode";
+  static const String apiPrefix = '/api/v1';
+  static const String healthPath = '$apiPrefix/health';
+  static const String scansPath = '$apiPrefix/scans';
 
-  /// Gets the currently configured LinuxONE base URL
-  static Future<String> getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_prefHostKey) ?? defaultLinuxOneHost;
+  static const Duration requestTimeout = Duration(seconds: 12);
+  static const Duration pollInterval = Duration(milliseconds: 700);
+  static const Duration analysisTimeout = Duration(seconds: 90);
+
+  static const _kHost = 'linuxone_api_host';
+  static const _kApiKey = 'linuxone_api_key';
+  static const _kDemo = 'demo_mode';
+  static const _kConsent = 'consent_v1_accepted';
+
+  static Future<String> getHost() async =>
+      (await SharedPreferences.getInstance()).getString(_kHost) ?? defaultHost;
+
+  static Future<void> setHost(String host) async {
+    var h = host.trim();
+    while (h.endsWith('/')) {
+      h = h.substring(0, h.length - 1);
+    }
+    await (await SharedPreferences.getInstance()).setString(_kHost, h);
   }
 
-  /// Sets a new LinuxONE base URL
-  static Future<void> setBaseUrl(String newHost) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefHostKey, newHost.trim());
-  }
+  static Future<String> getApiKey() async =>
+      (await SharedPreferences.getInstance()).getString(_kApiKey) ?? '';
 
-  /// Whether to use simulated mock response when LinuxONE is unreachable
-  static Future<bool> isMockModeEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_prefMockModeKey) ?? true; // Default true so hackathon demo never fails
-  }
+  static Future<void> setApiKey(String key) async =>
+      (await SharedPreferences.getInstance()).setString(_kApiKey, key.trim());
 
-  /// Toggle mock fallback mode
-  static Future<void> setMockMode(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefMockModeKey, enabled);
-  }
+  /// Demo mode: when the server can't be reached, show sample results that are
+  /// clearly marked DEMO. On by default so a venue Wi-Fi failure can't break
+  /// the pitch.
+  static Future<bool> isDemoMode() async =>
+      (await SharedPreferences.getInstance()).getBool(_kDemo) ?? true;
+
+  static Future<void> setDemoMode(bool on) async =>
+      (await SharedPreferences.getInstance()).setBool(_kDemo, on);
+
+  static Future<bool> hasConsent() async =>
+      (await SharedPreferences.getInstance()).getBool(_kConsent) ?? false;
+
+  static Future<void> setConsent(bool accepted) async =>
+      (await SharedPreferences.getInstance()).setBool(_kConsent, accepted);
 }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../app/theme.dart';
 import '../config/api_config.dart';
 import '../models/patient_input.dart';
 import '../services/linuxone_api_service.dart';
+import '../widgets/common.dart';
 import 'scan_screen.dart';
 import 'settings_screen.dart';
 
+/// Architecture step 1.1: patient input (age 18+, sex) and pre-scan tips.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -13,406 +16,272 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+enum _Server { checking, online, demo, offline }
+
 class _HomeScreenState extends State<HomeScreen> {
-  int _age = 28;
-  String _sex = "Male";
-  final _apiService = LinuxOneApiService();
-  bool _isConnected = false;
-  String _host = "";
+  static const _minAge = 18;
+
+  final _api = LinuxOneApiService();
+  PatientInput _patient = const PatientInput(age: 28, sex: Sex.male);
+  _Server _server = _Server.checking;
 
   @override
   void initState() {
     super.initState();
-    _checkStatus();
+    _checkServer();
   }
 
-  Future<void> _checkStatus() async {
-    final host = await ApiConfig.getBaseUrl();
-    final connected = await _apiService.checkConnection();
-    if (mounted) {
-      setState(() {
-        _host = host;
-        _isConnected = connected;
-      });
-    }
+  @override
+  void dispose() {
+    _api.close();
+    super.dispose();
   }
 
-  void _navigateToScan() {
-    final patient = PatientInput(
-      age: _age,
-      sex: _sex,
-      userId: "PATIENT-${DateTime.now().millisecondsSinceEpoch % 10000}",
-    );
-
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (ctx) => ScanScreen(patient: patient)));
+  Future<void> _checkServer() async {
+    setState(() => _server = _Server.checking);
+    final info = await _api.checkHealth();
+    final demo = await ApiConfig.isDemoMode();
+    if (!mounted) return;
+    setState(() => _server = info.online
+        ? _Server.online
+        : demo
+            ? _Server.demo
+            : _Server.offline);
   }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+    _checkServer();
+  }
+
+  void _setAge(int age) =>
+      setState(() => _patient = _patient.copyWith(age: age.clamp(_minAge, PatientInput.maxAge)));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF060B14),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0043CE),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                "IBM",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              "PulsePal AI",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // Connection Status Pill
-          Center(
-            child: InkWell(
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (ctx) => const SettingsScreen()),
-                );
-                _checkStatus();
-              },
-              child: Container(
-                margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: (_isConnected ? Colors.green : Colors.amber)
-                      .withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: _isConnected ? Colors.green : Colors.amber,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: _isConnected
-                            ? Colors.greenAccent
-                            : Colors.amberAccent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _isConnected ? "LinuxONE Online" : "Demo Mode",
+      body: SafeArea(
+        child: Column(children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              children: [
+                Row(children: [
+                  const PulseLogo(),
+                  const SizedBox(width: 8),
+                  const Text('PulsePal',
                       style: TextStyle(
-                        color: _isConnected
-                            ? Colors.greenAccent
-                            : Colors.amberAccent,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                          fontFamily: AppFonts.sans, fontSize: 19, fontWeight: FontWeight.w700,
+                          color: AppColors.ink)),
+                  const Spacer(),
+                  _serverChip(),
+                ]),
+                const SizedBox(height: 26),
+                const Text('Check your vitals\nin 30 seconds', style: AppText.display),
+                const SizedBox(height: 8),
+                Text('Uses your front camera. No wearable needed.',
+                    style: AppText.body.copyWith(fontSize: 16)),
+                const SizedBox(height: 22),
+                AppCard(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Eyebrow('About you'),
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      const Text('Age', style: TextStyle(fontFamily: AppFonts.sans, fontSize: 16,
+                          fontWeight: FontWeight.w500, color: AppColors.ink)),
+                      const Spacer(),
+                      _StepButton(
+                          icon: Icons.remove,
+                          label: 'Decrease age',
+                          onTap: _patient.age > _minAge ? () => _setAge(_patient.age - 1) : null),
+                      SizedBox(
+                        width: 56,
+                        child: Text('${_patient.age}',
+                            textAlign: TextAlign.center, style: AppText.number),
                       ),
+                      _StepButton(
+                          icon: Icons.add,
+                          label: 'Increase age',
+                          onTap: _patient.age < PatientInput.maxAge
+                              ? () => _setAge(_patient.age + 1)
+                              : null),
+                    ]),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Divider(height: 1, color: AppColors.line),
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.settings, size: 13, color: Colors.white70),
-                  ],
+                    const Text('Sex', style: TextStyle(fontFamily: AppFonts.sans, fontSize: 16,
+                        fontWeight: FontWeight.w500, color: AppColors.ink)),
+                    const SizedBox(height: 10),
+                    _Segmented(
+                      value: _patient.sex,
+                      onChanged: (s) => setState(() => _patient = _patient.copyWith(sex: s)),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                        'For adults 18 and over. Age and sex are used to read your results, '
+                        'nothing else.',
+                        style: AppText.small),
+                  ]),
                 ),
-              ),
+                const SizedBox(height: 14),
+                const AppCard(
+                  padding: EdgeInsets.fromLTRB(18, 16, 18, 6),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Eyebrow('Before you start'),
+                    SizedBox(height: 6),
+                    _Tip(Icons.wb_sunny_outlined, 'Face a window or bright light'),
+                    _Tip(Icons.chair_outlined, 'Sit down and rest for a minute'),
+                    _Tip(Icons.stay_current_portrait, 'Prop your phone up so it stays still',
+                        last: true),
+                  ]),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Architectural Banner
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0043CE), Color(0xFF0F172A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF0043CE).withOpacity(0.3),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                  ),
-                ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Column(children: [
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => ScanScreen(patient: _patient))),
+                icon: const Icon(Icons.videocam_outlined),
+                label: const Text('Start scan'),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "rPPG Non-Invasive Vitals",
-                        style: TextStyle(
-                          color: Color(0xFF38BDF8),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white12,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          "s390x Telum",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    "Smartphone Camera &bull; Zero Wearable Hardware",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    "Video frames are streamed to IBM LinuxONE for accelerated signal conditioning, PyTorch inference, and IBM Granite clinical reasoning.",
-                    style: TextStyle(
-                      color: Color(0xFFCBD5E1),
-                      fontSize: 11,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Step 1: Patient Inputs Section
-            const Text(
-              "PATIENT INTAKE (Step 1 in Architecture)",
-              style: TextStyle(
-                color: Color(0xFF38BDF8),
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Age Input
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Patient Age",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: _age > 1
-                                ? () => setState(() => _age--)
-                                : null,
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Color(0xFF38BDF8),
-                            ),
-                          ),
-                          Text(
-                            "$_age yrs",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: _age < 120
-                                ? () => setState(() => _age++)
-                                : null,
-                            icon: const Icon(
-                              Icons.add_circle_outline,
-                              color: Color(0xFF38BDF8),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: _age.toDouble(),
-                    min: 1,
-                    max: 100,
-                    activeColor: const Color(0xFF38BDF8),
-                    inactiveColor: Colors.white12,
-                    onChanged: (val) => setState(() => _age = val.toInt()),
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(color: Colors.white12),
-                  const SizedBox(height: 12),
-
-                  // Sex Selection
-                  const Text(
-                    "Biological Sex",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: ["Male", "Female"].map((option) {
-                      final isSelected = _sex == option;
-                      return Expanded(
-                        child: GestureDetector(
-                          onTap: () => setState(() => _sex = option),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? const Color(0xFF0043CE)
-                                  : Colors.white.withOpacity(0.05),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isSelected
-                                    ? const Color(0xFF38BDF8)
-                                    : Colors.transparent,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              option,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? Colors.white
-                                    : Colors.white60,
-                                fontSize: 12,
-                                fontWeight: isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Start Scan Button
-            ElevatedButton(
-              onPressed: _navigateToScan,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0043CE),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 6,
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.videocam, size: 22),
-                  SizedBox(width: 10),
-                  Text(
-                    "START 15s VITALS SCAN",
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // LinuxONE Info Box
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A).withOpacity(0.5),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.security,
-                    color: Color(0xFF10B981),
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      "Data egress is cryptographically sealed via LinuxONE Secure Execution Enclave &bull; Target: $_host",
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 10.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 12),
+              const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.lock_outline, size: 14, color: AppColors.ink2),
+                SizedBox(width: 6),
+                Text('Video stays on your phone. Only colour data is sent.',
+                    style: TextStyle(fontFamily: AppFonts.sans, fontSize: 13,
+                        color: AppColors.ink2)),
+              ]),
+            ]),
+          ),
+        ]),
       ),
     );
   }
+
+  Widget _serverChip() {
+    switch (_server) {
+      case _Server.checking:
+        return Pill(
+            label: 'Checking server…',
+            foreground: AppColors.ink2,
+            background: AppColors.muted,
+            onTap: _openSettings);
+      case _Server.online:
+        return Pill(
+            label: 'Server online',
+            foreground: AppColors.normal,
+            background: AppColors.normalSoft,
+            dot: AppColors.normal,
+            onTap: _openSettings);
+      case _Server.demo:
+        return Pill(
+            label: 'Demo mode',
+            foreground: AppColors.watch,
+            background: AppColors.watchSoft,
+            dot: AppColors.watchFill,
+            onTap: _openSettings);
+      case _Server.offline:
+        return Pill(
+            label: 'Server offline',
+            foreground: AppColors.act,
+            background: AppColors.actSoft,
+            dot: AppColors.act,
+            onTap: _openSettings);
+    }
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.icon, required this.label, this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: label,
+        child: Material(
+          color: AppColors.paper,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(icon,
+                  color: onTap == null ? AppColors.line : AppColors.ink2, size: 22),
+            ),
+          ),
+        ),
+      );
+}
+
+class _Segmented extends StatelessWidget {
+  const _Segmented({required this.value, required this.onChanged});
+  final Sex value;
+  final ValueChanged<Sex> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(4),
+        decoration:
+            BoxDecoration(color: AppColors.paper, borderRadius: BorderRadius.circular(12)),
+        child: Row(children: [
+          for (final s in Sex.values)
+            Expanded(
+              child: Semantics(
+                selected: s == value,
+                button: true,
+                child: GestureDetector(
+                  onTap: () => onChanged(s),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: s == value ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                      boxShadow: s == value
+                          ? const [BoxShadow(color: Color(0x1F000000), blurRadius: 3, offset: Offset(0, 1))]
+                          : null,
+                    ),
+                    child: Text(s.label,
+                        style: TextStyle(
+                            fontFamily: AppFonts.sans,
+                            fontSize: 15,
+                            fontWeight: s == value ? FontWeight.w600 : FontWeight.w500,
+                            color: s == value ? AppColors.ink : AppColors.ink2)),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      );
+}
+
+class _Tip extends StatelessWidget {
+  const _Tip(this.icon, this.text, {this.last = false});
+  final IconData icon;
+  final String text;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+            border: last ? null : const Border(bottom: BorderSide(color: AppColors.line))),
+        child: Row(children: [
+          IconTile(icon, color: AppColors.accent, background: AppColors.accentSoft),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: AppText.label.copyWith(fontWeight: FontWeight.w400))),
+        ]),
+      );
 }
