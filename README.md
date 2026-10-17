@@ -61,12 +61,38 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 # optional
 export PULSEPAL_API_KEY=change-me                     # require Bearer key on /scans
-export GRANITE_URL=http://host:8001/v1/chat/completions   # OpenAI-compatible Granite endpoint
+export GRANITE_URL=http://127.0.0.1:8081/v1/chat/completions   # Granite via llama-server (see below)
 ```
 
 Container (Podman or Docker): `podman build -t pulsepal . && podman run -p 8000:8000 pulsepal`
 
 Tests: `pip install pytest && python -m pytest -q tests`
+
+## Granite on the LinuxONE VM (optional explanation step)
+
+Granite only writes the plain-language "Why this result" text from numbers the
+pipeline already computed. It never measures anything, and the suggestion and
+disclaimer stay fixed in code. If it's off or fails, a template is used.
+
+For an 8 GB VM: **Granite 3.3 2B Instruct, Q4_K_M (~1.5 GB), big-endian GGUF,
+served by llama.cpp `llama-server`.** Convert to big-endian F16 on the Mac, then
+quantise on the VM (quantising during conversion produced a broken model).
+
+1. **On your Mac** (the converter needs PyTorch, which has no s390x build):
+   `bash linuxone_server/scripts/granite_convert_on_mac.sh`, then
+   `scp ~/granite/granite-3.3-2b-instruct-be.f16.gguf <user>@<vm>:~/granite/`
+2. **On the VM:** `bash scripts/setup_granite.sh` (builds llama.cpp for s390x and
+   quantises the model to Q4_K_M)
+3. **Run both** (two terminals or tmux):
+   ```bash
+   ~/granite/llama.cpp/build/bin/llama-server -m ~/granite/granite-3.3-2b-instruct-be.Q8_0.gguf \
+       --host 127.0.0.1 --port 8081 -c 2048 -t $(nproc) --jinja
+   GRANITE_URL=http://127.0.0.1:8081/v1/chat/completions uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+4. **Check:** `GRANITE_URL=... python3 scripts/check_granite.py`. The app's
+   "Why this result" chip then shows **Granite 3** instead of **Template**.
+
+Tuning: `GRANITE_TIMEOUT_S` (default 30), `GRANITE_MAX_TOKENS` (default 120).
 
 ## What's real vs. stretch (per the architecture review cut line)
 
