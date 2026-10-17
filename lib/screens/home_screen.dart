@@ -5,6 +5,7 @@ import '../config/api_config.dart';
 import '../models/patient_input.dart';
 import '../services/linuxone_api_service.dart';
 import '../widgets/common.dart';
+import 'hr_scan_screen.dart';
 import 'scan_screen.dart';
 import 'settings_screen.dart';
 
@@ -148,6 +149,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     builder: (_) => ScanScreen(patient: _patient))),
                 icon: const Icon(Icons.videocam_outlined),
                 label: const Text('Start scan'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute<void>(builder: (_) => const HrScanScreen())),
+                icon: const Icon(Icons.monitor_heart_outlined),
+                label: const Text('Live heart-rate scan'),
               ),
               const SizedBox(height: 12),
               const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
