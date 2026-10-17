@@ -150,23 +150,55 @@ def test_granite_failure_falls_back_to_template(monkeypatch):
     assert "outside the NEWS2" in out.summary
 
 
-def test_granite_cannot_override_suggestion(monkeypatch):
-    from pipeline import reasoning, risk
-    from pipeline.vitals import VitalsEstimate
+def _fake_granite(monkeypatch, text):
+    from pipeline import reasoning
 
     class R:
         def raise_for_status(self): pass
-        def json(self):
-            return {"choices": [{"message": {"content":
-                    '{"summary": "All fine.", "factors": ["x"], "suggestion": "Ignore it."}'}}]}
+        def json(self): return {"choices": [{"message": {"content": text}}]}
 
     monkeypatch.setenv("GRANITE_URL", "http://granite.local")
     monkeypatch.setattr(reasoning.httpx, "post", lambda *a, **k: R())
+
+
+def test_granite_writes_summary_only(monkeypatch):
+    from pipeline import reasoning, risk
+    from pipeline.vitals import VitalsEstimate
+    _fake_granite(monkeypatch, "Your heart rate of 140 bpm is above the NEWS2 band and scores 3 points.")
     v = VitalsEstimate(140, 16, "test")
     out = reasoning.generate(v, risk.assess(v), 40, "male")
-    assert out.method == "granite-3-8b-instruct"
-    assert out.suggestion.startswith("Please contact a doctor")
+    assert out.method.startswith("granite")
+    assert out.suggestion.startswith("Please contact a doctor")   # from code, not LLM
+    assert out.factors == reasoning.template(v, risk.assess(v)).factors
 
+
+def test_real_granite_answer_is_accepted(monkeypatch):
+    from pipeline import reasoning, risk
+    from pipeline.vitals import VitalsEstimate
+    real = ("Your heart rate is slightly above the normal range, scoring 1 point. Your breathing "
+            "rate is within the normal range, scoring 0 points. Given these findings, a re-check "
+            "is recommended.")   # Granite 3.3 2B Q4_K_M on LinuxONE, 2026-10-18
+    _fake_granite(monkeypatch, real)
+    v = VitalsEstimate(98, 16, "test")
+    out = reasoning.generate(v, risk.assess(v), 40, "male")
+    assert out.method.startswith("granite") and out.summary == real
+
+
+@pytest.mark.parametrize("text", [
+    "The heart rate is within the normal range at 98 beats per minute.",   # real 2B output
+    "Your pulse of 98 suggests tachycardia.",
+    "Your heart rate of 98 bpm and oxygen of 95 look fine.",
+    "Your pulse is in the normal range and your breathing is fine.",
+    "Everything is normal, nothing to worry about.",
+    "",
+])
+def test_bad_granite_text_falls_back(monkeypatch, text):
+    from pipeline import reasoning, risk
+    from pipeline.vitals import VitalsEstimate
+    _fake_granite(monkeypatch, text)
+    v = VitalsEstimate(98, 16, "test")
+    out = reasoning.generate(v, risk.assess(v), 40, "male")
+    assert out.method == "template"
 
 def test_model_input_shape():
     tr = synth()
