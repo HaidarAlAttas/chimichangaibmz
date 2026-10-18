@@ -5,7 +5,7 @@ import '../app/theme.dart';
 import '../models/patient_input.dart';
 import '../models/scan_result.dart';
 import '../widgets/common.dart';
-import 'scan_screen.dart';
+import 'hr_scan_screen.dart';
 
 /// Architecture box 3: the health dashboard, opened as a full-screen pop-up.
 ///
@@ -64,18 +64,25 @@ class ResultsScreen extends StatelessWidget {
               points: _points(a, 'heart_rate'),
             ),
             const SizedBox(height: 10),
-            _VitalCard(
-              icon: Icons.air,
-              color: const Color(0xFF6E4BD8),
-              title: 'Breathing rate',
-              tag: v.respiratoryRateExperimental ? 'Experimental' : null,
-              value: v.respiratoryRateBpm,
-              unit: '/ min',
-              band: v.respiratoryRateRange,
-              min: 5,
-              max: 30,
-              points: _points(a, 'respiratory_rate'),
-            ),
+            if (_points(a, 'respiratory_rate') != null)
+              _VitalCard(
+                icon: Icons.air,
+                color: const Color(0xFF6E4BD8),
+                title: 'Breathing rate',
+                tag: v.respiratoryRateExperimental ? 'Experimental' : null,
+                value: v.respiratoryRateBpm,
+                unit: '/ min',
+                band: v.respiratoryRateRange,
+                min: 5,
+                max: 30,
+                points: _points(a, 'respiratory_rate'),
+              )
+            else
+              const _NotMeasuredCard(
+                icon: Icons.air,
+                title: 'Breathing rate',
+                note: 'Not part of this scan. Count breaths for one minute if you need it.',
+              ),
             const SizedBox(height: 10),
             const _OxygenPlaceholder(),
             const SizedBox(height: 16),
@@ -88,7 +95,7 @@ class ResultsScreen extends StatelessWidget {
                 flex: 5,
                 child: OutlinedButton(
                   onPressed: () => Navigator.of(context).pushReplacement(
-                      MaterialPageRoute<void>(builder: (_) => ScanScreen(patient: patient))),
+                      MaterialPageRoute<void>(builder: (_) => HrScanScreen(patient: patient))),
                   child: const Text('Scan again'),
                 ),
               ),
@@ -124,7 +131,7 @@ class _StatusCard extends StatelessWidget {
     final (title, body, bg, line, ink, mark, icon) = switch (assessment.level) {
       FlagLevel.noUrgentFlags => (
           'No urgent flags',
-          'Your heart rate and breathing are within the ranges used by NEWS2, a standard '
+          'What we measured is within the ranges used by NEWS2, a standard '
               'early-warning score.',
           AppColors.normalSoft,
           AppColors.normalLine,
@@ -396,4 +403,32 @@ class _WhyCard extends StatelessWidget {
       ]),
     );
   }
+}
+
+class _NotMeasuredCard extends StatelessWidget {
+  const _NotMeasuredCard({required this.icon, required this.title, required this.note});
+  final IconData icon;
+  final String title;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.line, width: 1.2),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            IconTile(icon, color: AppColors.ink3, background: AppColors.muted, size: 30),
+            const SizedBox(width: 10),
+            Text(title, style: AppText.label.copyWith(color: AppColors.ink2)),
+            const Spacer(),
+            const Text('Not measured', style: TextStyle(fontFamily: AppFonts.sans, fontSize: 14,
+                color: AppColors.ink3)),
+          ]),
+          const SizedBox(height: 8),
+          Text(note, style: AppText.small),
+        ]),
+      );
 }

@@ -3,12 +3,17 @@ import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
 import '../config/scan_api_config.dart';
+import '../models/patient_input.dart';
+import '../services/hr_assessment.dart';
 import '../services/hr_scan/hr_scan_controller.dart';
+import 'results_screen.dart';
 
 /// Live heart-rate scan against the FastAPI backend: front camera, JPEG frames
 /// to the server, face box drawn from each response, bpm at the end.
 class HrScanScreen extends StatefulWidget {
-  const HrScanScreen({super.key});
+  const HrScanScreen({super.key, this.patient = const PatientInput(age: 28, sex: Sex.male)});
+
+  final PatientInput patient;
 
   @override
   State<HrScanScreen> createState() => _HrScanScreenState();
@@ -31,8 +36,21 @@ class _HrScanScreenState extends State<HrScanScreen> {
     super.dispose();
   }
 
+  bool _shownResult = false;
+
   void _onChange() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final hr = _c.hr;
+    if (_c.phase == HrScanPhase.done && hr != null && !_shownResult) {
+      _shownResult = true;
+      Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) =>
+            ResultsScreen(patient: widget.patient, result: HrAssessment.fromHeartRate(hr)),
+      ));
+      return;
+    }
+    setState(() {});
   }
 
   @override

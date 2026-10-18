@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../app/theme.dart';
 import '../config/api_config.dart';
+import '../config/scan_api_config.dart';
 import '../models/patient_input.dart';
 import '../services/linuxone_api_service.dart';
 import '../widgets/common.dart';
 import 'hr_scan_screen.dart';
-import 'scan_screen.dart';
 import 'settings_screen.dart';
 
 /// Architecture step 1.1: patient input (age 18+, sex) and pre-scan tips.
@@ -40,10 +41,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _checkServer() async {
     setState(() => _server = _Server.checking);
-    final info = await _api.checkHealth();
+    // Any HTTP answer from the PulseNet backend (even 404 on '/') means it is up.
+    var online = false;
+    try {
+      final res = await http
+          .get(Uri.parse(ScanApiConfig.baseUrl))
+          .timeout(const Duration(seconds: 4));
+      online = res.statusCode < 500;
+    } catch (_) {}
     final demo = await ApiConfig.isDemoMode();
     if (!mounted) return;
-    setState(() => _server = info.online
+    setState(() => _server = online
         ? _Server.online
         : demo
             ? _Server.demo
@@ -146,22 +154,15 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(children: [
               FilledButton.icon(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => ScanScreen(patient: _patient))),
+                    builder: (_) => HrScanScreen(patient: _patient))),
                 icon: const Icon(Icons.videocam_outlined),
                 label: const Text('Start scan'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute<void>(builder: (_) => const HrScanScreen())),
-                icon: const Icon(Icons.monitor_heart_outlined),
-                label: const Text('Live heart-rate scan'),
               ),
               const SizedBox(height: 12),
               const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.lock_outline, size: 14, color: AppColors.ink2),
                 SizedBox(width: 6),
-                Text('Video stays on your phone. Only colour data is sent.',
+                Text('Frames go only to our LinuxONE server to measure your pulse.',
                     style: TextStyle(fontFamily: AppFonts.sans, fontSize: 13,
                         color: AppColors.ink2)),
               ]),

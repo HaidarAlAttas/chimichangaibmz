@@ -44,8 +44,8 @@ class _ConsentScreenState extends State<ConsentScreen> {
                     _Point(Icons.info_outline, 'A screening check, not a diagnosis',
                         "It can miss problems. It doesn't replace a doctor."),
                     _Point(Icons.crop_square, 'What we collect',
-                        'Your age, sex and the average colour of your forehead and cheeks. '
-                            'Never photos or video.'),
+                        'Your age and sex, and small camera frames of your face during the '
+                            '30-second scan, used only to measure your pulse.'),
                     _Point(Icons.swap_vert, 'Where it goes',
                         'Sent encrypted to our server on IBM LinuxONE to work out your result.',
                         last: true),
@@ -151,9 +151,9 @@ Future<void> showPrivacyNotice(BuildContext context) => showModalBottomSheet<voi
                     'in your face, using your phone\'s front camera. It is a screening check for '
                     'adults, not a medical device, and it does not diagnose anything.'),
             _Para('What we collect',
-                'Your age and sex, and one average colour value per video frame from three '
-                    'small areas of your face (forehead and both cheeks). Video and photos stay '
-                    'on your phone and are never stored or sent.'),
+                'Your age and sex, and small camera frames of your face during the '
+                    '30-second scan. The frames are sent over an encrypted connection to our '
+                    'IBM LinuxONE server only to measure your pulse. The app does not save them.'),
             _Para('Why',
                 'Only to calculate and show your result. We do not sell your data or use it '
                     'for advertising.'),
