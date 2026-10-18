@@ -1,0 +1,83 @@
+OPEN-SOURCE RESOURCES AND OFFICIAL REFERENCES
+(licences are the projects' usual ones, please confirm on each page before submitting)
+
+DATA
+- MCD-rPPG (Multi-Camera Dataset for rPPG): training and test data (your document says CC-BY-4.0; the dataset card shows no licence, so confirm)
+  https://huggingface.co/datasets/kyegorov/mcd_rppg
+- Related paper: K. Egorov et al., "Gaze into the Heart: A Multi-View Video Dataset for rPPG and Health Biomarkers Estimation", arXiv:2508.17924, 2025
+  https://arxiv.org/abs/2508.17924
+- Hugging Face Hub client (Apache 2.0): dataset download
+  https://huggingface.co/docs/huggingface_hub
+
+AI / ML AND SIGNAL PROCESSING
+- PyTorch (BSD-style): PulseNet training and inference
+  https://pytorch.org
+- NumPy (BSD): resampling, filtering, FFT heart rate
+  https://numpy.org
+- pandas (BSD): reading pulse-waveform tables in training
+  https://pandas.pydata.org
+
+VIDEO AND FACE DETECTION
+- OpenCV (Apache 2.0): JPEG decoding, resizing, Haar face detector
+  https://opencv.org
+- OpenCV cascade classifier documentation
+  https://docs.opencv.org/4.9.0/de/d37/group__objdetect__cascade__classifier.html
+- FFmpeg (LGPL/GPL, depends on build): decoding dataset videos in training, built from source on s390x
+  https://ffmpeg.org
+
+BACKEND
+- FastAPI (MIT): the web API
+  https://fastapi.tiangolo.com
+- Starlette (BSD): FastAPI's web layer
+  https://www.starlette.io
+- Uvicorn (BSD): the server
+  https://www.uvicorn.org
+- Pydantic (MIT): data validation
+  https://docs.pydantic.dev
+  (Your document says Flask in Q5 and Q6, but the final backend is FastAPI.)
+
+MOBILE APP
+- Flutter (BSD): the app framework
+  https://flutter.dev
+- camera package (BSD): camera capture
+  https://pub.dev/packages/camera
+- http package (BSD): API calls
+  https://pub.dev/packages/http
+
+LAPTOP DEMO PAGE ONLY (not in the final API)
+- MediaPipe Tasks Vision, BlazeFace face detector (Apache 2.0)
+  https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector
+
+METHODS AND STANDARDS
+- POS (Plane-Orthogonal-to-Skin): W. Wang, A. C. den Brinker, S. Stuijk, G. de Haan, "Algorithmic Principles of Remote PPG", IEEE Transactions on Biomedical Engineering, 2017
+  https://doi.org/10.1109/TBME.2016.2609282
+- Viola-Jones / Haar cascades: P. Viola and M. Jones, "Rapid Object Detection using a Boosted Cascade of Simple Features", CVPR 2001
+  https://www.cs.ubc.ca/~lowe/425/violaJones01.pdf
+- NEWS2: Royal College of Physicians, "National Early Warning Score (NEWS) 2", 2017
+  https://www.rcp.ac.uk/resources/national-early-warning-score-news-2/
+- Emergency Severity Index (ESI) Implementation Handbook, AHRQ / Emergency Nurses Association (hosted copy)
+  https://emscimprovement.center/documents/2177/Emergency_Severity_Index_Handbook.pdf
+- Dilated convolutions: F. Yu and V. Koltun, "Multi-Scale Context Aggregation by Dilated Convolutions", 2015
+  https://arxiv.org/abs/1511.07122
+- Pearson-correlation loss: a standard rPPG training technique, no single paper to cite
+
+PLATFORM
+- IBM LinuxONE (s390x): training and hosting, via the LinuxONE Community Cloud with JupyterLab and Docker
+  https://www.ibm.com/products/linuxone
+
+MARKED [ONLY IF DONE] / PLANNED IN YOUR DOCUMENT (not used in the current build)
+- IBM Granite 3 Instruct: plain-language explanation
+  https://huggingface.co/ibm-granite
+- llama.cpp (MIT): would serve Granite on s390x
+  https://github.com/ggml-org/llama.cpp
+- ONNX (Apache 2.0): model export for zDLC
+  https://onnx.ai
+- IBM Z Deep Learning Compiler (zDLC): runs the model on the Telum accelerator
+  https://github.com/IBM/zDLC
+- PostgreSQL (PostgreSQL licence): scan results and audit log
+  https://www.postgresql.org
+
+IN YOUR DOCUMENT BUT NOT USED
+- UBFC-rPPG and PURE datasets: not used for training, so do not list them
+- XGBoost: optional stretch idea only
+- Flask: the document says Flask, but the app is FastAPI
