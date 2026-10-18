@@ -31,9 +31,9 @@ class ScanApiConfig {
     return 'http://localhost:5000';
   }
 
-  static const Duration requestTimeout = Duration(seconds: 10);
+  static const Duration requestTimeout = Duration(seconds: 30);
   static const int scanSeconds = 30;
   static const int targetFps = 15;
   static const int jpegQuality = 90; // never below 85: the pulse is a tiny colour change
-  static const int frameWidth = 480;
+  static const int frameWidth = 360;
 }
