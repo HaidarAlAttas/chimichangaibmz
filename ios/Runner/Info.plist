@@ -8,6 +8,9 @@
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<!-- Demo only: plain http:// to the LinuxONE VM. Remove once it has HTTPS. -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 	</dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
