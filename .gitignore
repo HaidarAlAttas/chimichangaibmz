@@ -46,3 +46,20 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Secrets / local config
+.env
+.env.*
+*.pem
+*.key
+*.pt
+
+# Machine-specific Flutter files
+local.properties
+Generated.xcconfig
+flutter_export_environment.sh
+flutter_native_integration.env
+**/ios/Flutter/ephemeral/
+
+# Dataset frames (identifiable people)
+AI Model Source/box_check_*.png
